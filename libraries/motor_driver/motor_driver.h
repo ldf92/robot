@@ -21,7 +21,7 @@
 
 /**
     Function: motor_init
-    Description: setup the connectin bewtween the motor controller and cpu
+    Description: setup the connectin between the motor controller and cpu
  */
 void motor_init();
 
