@@ -18,9 +18,9 @@
 #define SDLPIN 4
 #define SCLPIN 5
 
-#define SAMPLE_SIZE 10
+#define SAMPLE_SIZE 5
 #define COMPASS_ADDR 0x1E //0011110b, I2C 7bit address of HMC5883
-
+#define DECLINATION_ANGLE -10.0/180.0*PI    //-10.0 for state college, convert to radians
 /**
     Function: compass_init
     Description: setup the connection between the compass and cpu
