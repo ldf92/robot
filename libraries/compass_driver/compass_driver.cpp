@@ -10,23 +10,30 @@
 
 #include "Arduino.h"
 #include <wire.h>
-//function prototype
+#include "compass_driver.h"
 
+#define FREQUENCY_COMMAND 0x18
+#define DELAY_TIME 50
+//function prototype
 int readAngle();    //read the current horizontal angle in degrees
 
 int original_direction_angle = 0;
-
 /**
     Function: compass_init
     Description: setup the connection between the compass and cpu
  */
 void compass_init(){
-    Wire.begin();
+    //Wire.begin();
     
     //Put the HMC5883 IC into the correct operating mode
     Wire.beginTransmission(COMPASS_ADDR); //open communication with HMC5883
     Wire.write(0x02); //select mode register
     Wire.write(0x00); //continuous measurement mode
+    Wire.endTransmission();
+    
+    Wire.beginTransmission(COMPASS_ADDR); //open communication with HMC5883
+    Wire.write(0x00); //select register A
+    Wire.write(FREQUENCY_COMMAND); //set to frequency 75, delay 50 is OK
     Wire.endTransmission();
     
     original_direction_angle = compass_get_angle();
@@ -39,11 +46,21 @@ void compass_init(){
     Descripton: get the angle compared with its original direction
  */
 int compass_get_angle(){
-    int current_angle = 0;
+    int previous_angle;
+    int current_angle;
+    int temp;
+    current_angle = readAngle();
+    previous_angle = current_angle;
     //sampling the original direction angle
-    for( int i = 0; i < SAMPLE_SIZE; i++){
-        current_angle += readAngle();
-        delay( 250);
+    for( int i = 0; i < SAMPLE_SIZE - 1; i++){
+        temp = readAngle();
+        //use temp to detect situation where number jump from 0 to 360
+        if( (temp - previous_angle) > 180 || (temp - previous_angle) < -180)
+            current_angle += previous_angle;
+        else
+            current_angle += temp;
+        
+        delay( DELAY_TIME);
     }
     current_angle = current_angle/SAMPLE_SIZE;
     
@@ -56,32 +73,44 @@ int compass_get_angle(){
  */
 int readAngle(){
     int x,y,z; //triple axis data
+    int status;
+    bool lock_state = false;
     float de_x,de_y,de_z;
     float heading,headingDegrees;  //the horizontal heading
-
+    
     //Tell the HMC5883L where to begin reading data
-    Wire.beginTransmission(address);
+    Wire.beginTransmission(COMPASS_ADDR);
     Wire.write(0x03); //select register 3, X MSB register
     Wire.endTransmission();
-    
-    
     //Read data from each axis, 2 registers per axis
-    Wire.requestFrom(address, 6);
-    while(Wire.available() < 6);
-    x = Wire.read()<<8; //X msb
-    x |= Wire.read(); //X lsb
-    z = Wire.read()<<8; //Z msb
-    z |= Wire.read(); //Z lsb
-    y = Wire.read()<<8; //Y msb
-    y |= Wire.read(); //Y lsb
+    Wire.requestFrom(COMPASS_ADDR, 7);
+    if(Wire.available() >= 7){
+        x = Wire.read()<<8; //X msb
+        x |= Wire.read(); //X lsb
+        z = Wire.read()<<8; //Z msb
+        z |= Wire.read(); //Z lsb
+        y = Wire.read()<<8; //Y msb
+        y |= Wire.read(); //Y lsb
+        status = Wire.read();
+    }
+    lock_state = status & 0x02;   //get the lock bit
+    
     
     //convert x,y,z into radians
     de_x = x / 180.0 * PI;
     de_y = y / 180.0 * PI;
     de_z = z / 180.0 * PI;
     
+    /*Serial.print( "de_x: ");
+    Serial.print( x );
+    Serial.print( "  de_y: ");
+    Serial.print( y );
+    Serial.print( "  de_z: ");
+    Serial.println( z );
+    */
+    
     //calcuate teh heading
-    float heading = atan2(de_y, de_x);
+    heading = atan2(de_y, de_x);
     
     //calibrate the heading by adding declination angle
     heading += DECLINATION_ANGLE;
@@ -95,22 +124,21 @@ int readAngle(){
     
     //convert heading into degrees
     headingDegrees = heading * 180.0/PI;
-    
+
     //correcting the angle issue
-    
-    //map 0 - 90 degree
-    if (headingDegrees >= 0 && headingDegrees < 122)
+    //map 0 - 90 degreex
+    if (headingDegrees >= 0 && headingDegrees < 124)
     {
-        headingDegrees = map(headingDegrees,0,122,0,90);
+        headingDegrees = map(headingDegrees,0,124,0,90);
     }
     //map 90 - 180 degree
-    else if (headingDegrees >= 122 && headingDegrees < 222)
+    else if (headingDegrees >= 124 && headingDegrees < 216)
     {
-        headingDegrees =  map(headingDegrees,122,222,90,180);
+        headingDegrees =  map(headingDegrees,124,216,90,180);
     }
     //map 180 - 270 degree
-    else if( headingDegrees >= 222 && headingDegrees < 282){
-        headingDegrees =  map(headingDegrees,222,282,180,270);
+    else if( headingDegrees >= 216 && headingDegrees < 276){
+        headingDegrees =  map(headingDegrees,216,276,180,270);
     }
     //map 270 - 360 degree
     else{
@@ -118,6 +146,6 @@ int readAngle(){
     }
     
     
-    return headingDegrees;
+    return (int)headingDegrees;
 }
 
